@@ -4,3 +4,5 @@ peft
 bitsandbytes
 accelerate
 torch
+groq
+python-dotenv
