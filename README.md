@@ -6,6 +6,10 @@ A fine-tuned language model that converts plain English questions into SQL queri
 
 ---
 
+🔗 **[Live Demo](https://your-app.streamlit.app)** | **[HuggingFace Model](https://huggingface.co/CopyNinja3223/tinyllama-text2sql)**
+
+---
+
 ## What is LoRA?
 
 Full fine-tuning updates all ~1.1 billion parameters — expensive and slow. LoRA injects small trainable "adapter" matrices into the attention layers and freezes everything else. Result: only ~0.5% of parameters are trained, using 10x less memory with comparable performance.
@@ -100,3 +104,7 @@ text2sql-finetune/
 - HuggingFace Hub model publishing
 - Evaluation: exact match accuracy on Spider benchmark
 - Before vs after comparison to show learning
+
+---
+
+![Demo](demo.png)
