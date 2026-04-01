@@ -6,7 +6,7 @@ A fine-tuned language model that converts plain English questions into SQL queri
 
 ---
 
-🔗 **[Live Demo](https://your-app.streamlit.app)** | **[HuggingFace Model](https://huggingface.co/CopyNinja3223/tinyllama-text2sql)**
+🔗 **[Live Demo](https://tinyllama-text2sql-njhd28lmojtv7e5esnrjrh.streamlit.app)** | **[HuggingFace Model](https://huggingface.co/CopyNinja3223/tinyllama-text2sql)**
 
 ---
 
