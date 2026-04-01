@@ -1,13 +1,14 @@
 """
-app.py — Text-to-SQL Demo
-Run after fine-tuning: streamlit run app.py
-Loads your fine-tuned model from HuggingFace Hub
+app.py — Text-to-SQL Demo (Groq API version)
+No GPU needed — runs via Groq's free API
 """
 
 import streamlit as st
-import torch
-from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from peft import PeftModel
+import os
+from groq import Groq
+from dotenv import load_dotenv
+
+load_dotenv()
 
 st.set_page_config(page_title="Text-to-SQL", page_icon="🛢️", layout="wide")
 
@@ -27,14 +28,6 @@ st.markdown("""
         color: #60a5fa;
         margin: 12px 0;
     }
-    .badge {
-        display: inline-block;
-        padding: 2px 10px;
-        border-radius: 20px;
-        font-size: 0.75rem;
-        font-family: 'Space Mono', monospace;
-        margin: 2px;
-    }
     .stButton > button {
         background: #2563eb !important;
         color: #fff !important;
@@ -50,121 +43,136 @@ st.markdown("""
         color: #e8e6df !important;
         border: 1px solid #374151 !important;
         border-radius: 8px !important;
-        font-family: 'DM Sans', sans-serif !important;
+    }
+    .stTextInput > div > div > input {
+        background: #111827 !important;
+        color: #e8e6df !important;
+        border: 1px solid #374151 !important;
+        border-radius: 8px !important;
     }
 </style>
 """, unsafe_allow_html=True)
 
-# ── Load model ────────────────────────────────────────────────────────────────
-@st.cache_resource
-def load_model(hf_username):
-    BASE_MODEL  = "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
-    LORA_MODEL  = f"{hf_username}/tinyllama-text2sql"
-
-    bnb_config = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_quant_type="nf4",
-        bnb_4bit_compute_dtype=torch.float16,
-    )
-
-    tokenizer = AutoTokenizer.from_pretrained(BASE_MODEL)
-    tokenizer.pad_token = tokenizer.eos_token
-
-    base_model = AutoModelForCausalLM.from_pretrained(
-        BASE_MODEL,
-        quantization_config=bnb_config,
-        device_map="auto",
-    )
-    model = PeftModel.from_pretrained(base_model, LORA_MODEL)
-    model.eval()
-    return model, tokenizer
-
-
-def generate_sql(model, tokenizer, question):
-    prompt = f"""### Task: Convert the natural language question to a SQL query.
-
-### Question: {question}
-
-### SQL:
-"""
-    inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=100,
-            temperature=0.1,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id,
-        )
-    generated = tokenizer.decode(outputs[0], skip_special_tokens=True)
-    if "### SQL:" in generated:
-        sql = generated.split("### SQL:")[-1].strip()
-        return sql.split("\n")[0].strip()
-    return generated.strip()
-
-
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.markdown('<div style="font-family:Space Mono,monospace;font-size:1.1rem;font-weight:700;color:#60a5fa;margin-bottom:1rem">Text-to-SQL</div>', unsafe_allow_html=True)
-    hf_username = st.text_input("HuggingFace username", value="asanepranav")
-    load_btn    = st.button("Load model")
+
+    api_key = st.text_input(
+        "Groq API Key",
+        type="password",
+        value=os.environ.get("GROQ_API_KEY", ""),
+        placeholder="gsk_..."
+    )
+
+    schema = st.text_area(
+        "Database schema (optional)",
+        placeholder="""e.g.
+students(id, name, age, gpa, department)
+courses(id, name, credits, professor)
+enrollments(student_id, course_id, grade)""",
+        height=160
+    )
 
     st.divider()
     st.markdown("""
     <div style="font-size:0.72rem;color:#4b5563;font-family:Space Mono,monospace;line-height:2">
-    model info<br>
-    base: TinyLlama-1.1B<br>
-    method: LoRA (PEFT)<br>
-    dataset: Spider SQL<br>
-    rank r=8, alpha=16<br>
-    trainable: ~0.5%
+    powered by<br>
+    Groq LLaMA 3.1 70B<br><br>
+    fine-tuned model<br>
+    huggingface.co/<br>
+    CopyNinja3223/<br>
+    tinyllama-text2sql
     </div>
     """, unsafe_allow_html=True)
 
 
+# ── SQL generation ─────────────────────────────────────────────────────────────
+def generate_sql(question, schema, api_key):
+    client = Groq(api_key=api_key)
+
+    schema_section = f"\n\nDatabase Schema:\n{schema}" if schema.strip() else ""
+
+    system_prompt = f"""You are an expert SQL query generator. Convert natural language questions into accurate SQL queries.
+Rules:
+- Return ONLY the SQL query, nothing else
+- No explanations, no markdown, no backticks
+- Use standard SQL syntax
+- If no schema is provided, use reasonable table/column names{schema_section}"""
+
+    response = client.chat.completions.create(
+        model="llama-3.3-70b-versatile",
+        messages=[
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": f"Convert to SQL: {question}"}
+        ],
+        temperature=0.1,
+        max_tokens=200,
+    )
+    return response.choices[0].message.content.strip()
+
+
 # ── Main ───────────────────────────────────────────────────────────────────────
 st.markdown('<div style="font-family:Space Mono,monospace;font-size:1.8rem;font-weight:700;color:#60a5fa">🛢️ Text → SQL</div>', unsafe_allow_html=True)
-st.markdown('<div style="color:#6b7280;margin-bottom:2rem">Fine-tuned TinyLlama with LoRA/PEFT on Spider dataset</div>', unsafe_allow_html=True)
+st.markdown('<div style="color:#6b7280;margin-bottom:2rem">Natural language to SQL — powered by Groq LLaMA 3.1</div>', unsafe_allow_html=True)
 
-if "model" not in st.session_state:
-    st.info("Enter your HuggingFace username in the sidebar and click Load model.")
-elif load_btn:
-    with st.spinner("Loading fine-tuned model from HuggingFace..."):
-        model, tokenizer = load_model(hf_username)
-        st.session_state.model     = model
-        st.session_state.tokenizer = tokenizer
-    st.success("Model loaded!")
+if not api_key:
+    st.warning("Enter your Groq API key in the sidebar to get started.")
+    st.stop()
 
-if "model" in st.session_state:
-    # Quick examples
-    st.markdown("**Try an example:**")
-    examples = [
-        "How many singers are there?",
-        "What are the names of all stadiums with capacity over 50000?",
-        "Find all employees in the engineering department",
-        "Show the average salary by department",
-        "List all orders placed in 2023 sorted by total amount",
-    ]
-    cols = st.columns(3)
-    selected = None
-    for i, ex in enumerate(examples):
-        if cols[i % 3].button(ex, key=f"ex_{i}"):
-            selected = ex
+# Quick examples
+st.markdown("**Try an example:**")
+examples = [
+    "How many students are there?",
+    "Show all students with GPA above 3.5",
+    "Find the average salary by department",
+    "List all orders from 2024 sorted by amount",
+    "Which products have never been ordered?",
+    "Count employees hired in each year",
+]
 
+cols = st.columns(3)
+selected = None
+for i, ex in enumerate(examples):
+    if cols[i % 3].button(ex, key=f"ex_{i}"):
+        selected = ex
+
+st.markdown("---")
+
+question = st.text_area(
+    "Your question in plain English",
+    value=selected or "",
+    placeholder="e.g. Show me all customers from Mumbai who spent more than 5000",
+    height=80
+)
+
+if st.button("Generate SQL ⚡"):
+    if question.strip():
+        with st.spinner("Generating SQL..."):
+            try:
+                sql = generate_sql(question, schema, api_key)
+                st.markdown("**Generated SQL:**")
+                st.markdown(f'<div class="sql-box">{sql}</div>', unsafe_allow_html=True)
+                st.code(sql, language="sql")
+
+                # Show copy-friendly version
+                with st.expander("Copy SQL"):
+                    st.text(sql)
+
+            except Exception as e:
+                st.error(f"Error: {str(e)}")
+    else:
+        st.warning("Enter a question first.")
+
+# History
+if "history" not in st.session_state:
+    st.session_state.history = []
+
+if question.strip() and st.session_state.get("last_question") != question:
+    st.session_state.last_question = question
+
+if st.session_state.history:
     st.markdown("---")
-    question = st.text_area(
-        "Your question",
-        value=selected or "",
-        placeholder="e.g. How many students have a GPA above 3.5?",
-        height=80
-    )
-
-    if st.button("Generate SQL", key="gen"):
-        if question.strip():
-            with st.spinner("Generating..."):
-                sql = generate_sql(st.session_state.model, st.session_state.tokenizer, question)
-            st.markdown("**Generated SQL:**")
-            st.markdown(f'<div class="sql-box">{sql}</div>', unsafe_allow_html=True)
-            st.code(sql, language="sql")
-        else:
-            st.warning("Enter a question first.")
+    st.markdown("**Recent queries**")
+    for item in reversed(st.session_state.history[-5:]):
+        with st.expander(item["question"]):
+            st.code(item["sql"], language="sql")
